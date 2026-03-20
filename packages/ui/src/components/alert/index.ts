@@ -1,2 +1,1 @@
-export { PdfAlert } from './alert';
-export type { PdfAlertProps, AlertVariant } from './alert.types';
+export { PdfAlert, type PdfAlertProps, type AlertVariant } from './alert';
