@@ -7,7 +7,6 @@ import {
   validateNodeVersion,
   validateReact,
   validateReactPdfRenderer,
-  validateTypeScript,
 } from './dependency-validator.js';
 
 describe('dependency-validator', () => {
@@ -114,45 +113,10 @@ describe('dependency-validator', () => {
       const result = validateNodeVersion();
       expect(result.installed).toBe(true);
       expect(result.currentVersion).toBeDefined();
-      expect(result.requiredVersion).toBe('>=24.0.0');
+      expect(result.requiredVersion).toBe('>=20.0.0');
 
-      // This test may fail if running on Node < 24
-      // That's expected and intentional
       const currentMajor = Number.parseInt(process.version.slice(1).split('.')[0]);
-      expect(result.valid).toBe(currentMajor >= 24);
-    });
-  });
-
-  describe('validateTypeScript', () => {
-    it('should return null if TypeScript not installed', () => {
-      createPackageJson({
-        dependencies: { react: '^18.0.0' },
-      });
-      const result = validateTypeScript(testDir);
-      expect(result).toBeNull();
-    });
-
-    it('should return invalid if TypeScript installed but no types', () => {
-      createPackageJson({
-        devDependencies: { typescript: '^5.0.0' },
-      });
-      const result = validateTypeScript(testDir);
-      expect(result).not.toBeNull();
-      expect(result?.valid).toBe(false);
-      expect(result?.message).toContain('recommended');
-    });
-
-    it('should return valid if both TypeScript and types installed', () => {
-      createPackageJson({
-        devDependencies: {
-          typescript: '^5.0.0',
-          '@types/react-pdf': '^7.0.0',
-        },
-      });
-      const result = validateTypeScript(testDir);
-      expect(result).not.toBeNull();
-      expect(result?.valid).toBe(true);
-      expect(result?.installed).toBe(true);
+      expect(result.valid).toBe(currentMajor >= 20);
     });
   });
 
@@ -172,7 +136,6 @@ describe('dependency-validator', () => {
       expect(result.react).toBeDefined();
       expect(result.reactPdfRenderer).toBeDefined();
       expect(result.nodeJs).toBeDefined();
-      expect(result.typescript).toBeDefined();
     });
 
     it('should handle missing package.json', () => {

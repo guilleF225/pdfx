@@ -3,10 +3,17 @@ export const DEFAULTS = {
   SCHEMA_URL: 'https://pdfx.akashpise.dev/schema.json',
   COMPONENT_DIR: './src/components/pdfx',
   THEME_FILE: './src/lib/pdfx-theme.ts',
-  TEMPLATE_DIR: './src/templates/pdfx',
   BLOCK_DIR: './src/blocks/pdfx',
 } as const;
 
 export const REGISTRY_SUBPATHS = {
-  TEMPLATES: 'templates',
+  BLOCKS: 'blocks',
 } as const;
+
+export const REQUIRED_VERSIONS = {
+  '@react-pdf/renderer': '>=3.0.0',
+  react: '>=16.8.0',
+  node: '>=20.0.0',
+};
+
+export const FETCH_TIMEOUT_MS = 10_000;

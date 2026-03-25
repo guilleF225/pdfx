@@ -12,6 +12,8 @@
       "dependsOn": ["^build"],
       "inputs": [
         "src/registry/index.json",
+        "src/registry/components/**",
+        "src/registry/blocks/**",
         "src/lib/build-registry.ts"
       ],
       "outputs": ["public/r/**"],
@@ -23,7 +25,7 @@
     },
     "test": {
       "dependsOn": ["^build"],
-      "inputs": ["src/**/*.tsx", "src/**/*.ts", "test/**/*.ts"],
+      "inputs": ["src/**/*.tsx", "src/**/*.ts"],
       "cache": true
     },
     "lint": {

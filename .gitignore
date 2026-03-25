@@ -37,5 +37,6 @@ coverage/
 .tsbuildinfo
 
 # Other
-docs
+/docs
 PDFx-DESIGN-SYSTEM
+.venv

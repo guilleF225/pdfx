@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { type Registry, registrySchema } from '@pdfx/shared';
+import { type Registry, registryItemSchema, registrySchema } from '@pdfx/shared';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,36 +15,14 @@ interface SourceRegistryFile {
 interface SourceRegistryItem {
   name: string;
   type: string;
+  devDependencies?: string[];
   title: string;
   description: string;
   files: SourceRegistryFile[];
   dependencies?: string[];
   registryDependencies?: string[];
+  peerComponents?: string[];
 }
-
-// Output types: what we generate (with content)
-interface RegistryFile {
-  path: string;
-  content: string;
-  type: string;
-}
-
-interface RegistryItem {
-  name: string;
-  type: string;
-  title: string;
-  description: string;
-  files: RegistryFile[];
-  dependencies?: string[];
-  registryDependencies?: string[];
-}
-
-// interface Registry {
-//   $schema: string;
-//   name: string;
-//   homepage: string;
-//   items: RegistryItem[];
-// }
 
 async function fileExistsAsync(filePath: string): Promise<boolean> {
   try {
@@ -72,11 +50,11 @@ async function fileExistsAsync(filePath: string): Promise<boolean> {
  *   usePdfxTheme import + ReturnType alias so the file is independent
  * - Normalizes theme & context import paths to '../lib/pdfx-theme[-context]'
  * - Rewrites intra-component imports: `./X.styles` → `./pdfx-X.styles`, `./X.types` → `./pdfx-X.types`
- * - Rewrites cross-component type imports: `../table/table.types` → `./pdfx-table.types`
- * - Rewrites data-table's table component import: `../table` → `./pdfx-table`
+ * - Rewrites cross-component type imports: `../foo/foo.types` → `../foo/pdfx-foo.types`
+ * - Rewrites cross-component component imports: `../table` → `../table/pdfx-table`
  * - Inlines resolveColor helper and removes its import (avoids separate lib file)
  */
-function transformForRegistry(content: string): { content: string; usesTheme: boolean } {
+export function transformForRegistry(content: string): { content: string; usesTheme: boolean } {
   let result = content;
   const usesTheme = result.includes('pdfx-theme');
 
@@ -163,12 +141,15 @@ function transformForRegistry(content: string): { content: string; usesTheme: bo
   result = result.replace(/from\s+['"]\.\/([^'"]+)\.types['"]/g, "from './pdfx-$1.types'");
 
   // ── 6. Rewrite cross-component type imports ───────────────────────────────
-  // ../foo/foo.types  →  ./pdfx-foo.types  (e.g. data-table.types imports TableVariant)
-  result = result.replace(/from\s+['"]\.\.\/([^/'"]+)\/\1\.types['"]/g, "from './pdfx-$1.types'");
+  // ../foo/foo.types  →  ../foo/pdfx-foo.types  (e.g. data-table.types imports TableVariant)
+  result = result.replace(
+    /from\s+['"]\.\.\/([^/'"]+)\/\1\.types['"]/g,
+    "from '../$1/pdfx-$1.types'"
+  );
 
   // ── 7. data-table: rewrite table component import ─────────────────────────
-  // ../table  or  ./table  →  ./pdfx-table
-  result = result.replace(/from\s+['"](?:\.\.\/|\.\/)table['"]/g, "from './pdfx-table'");
+  // ../table  or  ./table  →  ../table/pdfx-table
+  result = result.replace(/from\s+['"](?:\.\.\/|\.\/)table['"]/g, "from '../table/pdfx-table'");
 
   // ── 8. Inline resolveColor ────────────────────────────────────────────────
   const resolveColorInline = `const THEME_COLOR_KEYS = ['foreground','muted','mutedForeground','primary','primaryForeground','accent','destructive','success','warning','info'] as const;
@@ -210,10 +191,8 @@ async function processItem(
 
   const fileResults = await Promise.all(
     item.files.map(async (file) => {
-      // Source files may reference workspace packages via relative paths
-      // (e.g., ../../../../packages/ui/src/heading.tsx), so we resolve from
-      // the registry base dir without the traversal check. The ensureWithinDir
-      // check is used for output paths only.
+      // Source files are in src/registry/components/<component>/ and referenced by relative path.
+      // We resolve from the registry base dir. The ensureWithinDir check is used for output paths only.
       const filePath = path.resolve(registryBaseDir, file.path);
 
       if (!(await fileExistsAsync(filePath))) {
@@ -244,6 +223,10 @@ async function processItem(
     dependencies: item.dependencies || [],
   };
 
+  if (item.devDependencies && item.devDependencies.length > 0) {
+    output.devDependencies = item.devDependencies;
+  }
+
   // Build registryDependencies: always include "theme" for theme-aware components
   // and preserve any component-to-component dependencies declared in index.json.
   const sourceDeps = item.registryDependencies ?? [];
@@ -253,10 +236,202 @@ async function processItem(
     output.registryDependencies = sourceDeps;
   }
 
+  // Validate output against registryItemSchema before writing — catches silent
+  // transform regressions that drop required fields.
+  const validation = registryItemSchema.safeParse(output);
+  if (!validation.success) {
+    throw new Error(
+      `Output schema validation failed for "${item.name}":\n${validation.error.message}`
+    );
+  }
+
   const outputPath = path.join(outputDir, `${item.name}.json`);
   await fs.writeFile(outputPath, JSON.stringify(output, null, 2));
 
   console.log(`  ${item.name}.json`);
+}
+
+/**
+ * Maps @pdfx/components exported names to their consumer component file paths.
+ * Key: export name, Value: component folder name (used to build the pdfx- prefixed path).
+ */
+const PDFX_UI_COMPONENT_MAP: Record<string, string> = {
+  // Components
+  Badge: 'badge',
+  Card: 'card',
+  DataTable: 'data-table',
+  Divider: 'divider',
+  Heading: 'heading',
+  KeepTogether: 'keep-together',
+  KeyValue: 'key-value',
+  Link: 'link',
+  PdfAlert: 'alert',
+  PdfGraph: 'graph',
+  PdfImage: 'pdf-image',
+  PdfList: 'list',
+  PdfPageNumber: 'page-number',
+  PdfQRCode: 'qrcode',
+  PdfWatermark: 'watermark',
+  PageBreak: 'page-break',
+  PageFooter: 'page-footer',
+  PageHeader: 'page-header',
+  Section: 'section',
+  Signature: 'signature',
+  Stack: 'stack',
+  Table: 'table',
+  TableBody: 'table',
+  TableCell: 'table',
+  TableHeader: 'table',
+  TableRow: 'table',
+  Text: 'text',
+  // Theme context
+  PdfxThemeContext: 'theme-context',
+  PdfxThemeProvider: 'theme-context',
+  usePdfxTheme: 'theme-context',
+  useSafeMemo: 'theme-context',
+};
+
+/**
+ * Transforms a block source file for consumer distribution.
+ *
+ * Block source files use workspace imports (`@pdfx/components`, `@pdfx/shared`) so they
+ * resolve in the monorepo and can be type-checked and linted. This function
+ * rewrites those imports to consumer-relative paths so installed blocks work
+ * without any workspace packages.
+ *
+ * Transforms:
+ * - `from '@pdfx/shared'` (PdfxTheme type) → `from '../../lib/pdfx-theme'`
+ * - `from '@pdfx/components'` → split into per-component imports:
+ *     theme context exports  → `from '../../lib/pdfx-theme-context'`
+ *     component exports      → `from '../../components/pdfx/<name>/pdfx-<name>'`
+ *       (components sharing a file, e.g. Table/TableRow/TableCell, are merged into one import)
+ */
+export function transformBlockForRegistry(content: string): string {
+  let result = content;
+
+  // ── 1. @pdfx/shared → ../../lib/pdfx-theme ───────────────────────────────
+  result = result.replace(
+    /import\s+type\s+\{([^}]+)\}\s+from\s+'@pdfx\/shared';?/g,
+    "import type {$1} from '../../lib/pdfx-theme';"
+  );
+
+  // ── 2. @pdfx/components → per-component consumer paths ───────────────────────────
+  const uiImportMatch = result.match(
+    /import\s+(?:type\s+)?\{([^}]+)\}\s+from\s+'@pdfx\/components';?/
+  );
+
+  if (uiImportMatch) {
+    const rawNames = uiImportMatch[1]
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    // Separate theme context names from component names
+    const themeContextNames: string[] = [];
+    // Map: folder → [export names]
+    const componentGroups: Record<string, string[]> = {};
+
+    for (const name of rawNames) {
+      const folder = PDFX_UI_COMPONENT_MAP[name];
+      if (!folder) {
+        console.warn(`  Warning: unknown @pdfx/components export "${name}" — skipping`);
+        continue;
+      }
+      if (folder === 'theme-context') {
+        themeContextNames.push(name);
+      } else {
+        if (!componentGroups[folder]) componentGroups[folder] = [];
+        componentGroups[folder].push(name);
+      }
+    }
+
+    const newImports: string[] = [];
+
+    if (themeContextNames.length > 0) {
+      newImports.push(
+        `import { ${themeContextNames.join(', ')} } from '../../lib/pdfx-theme-context';`
+      );
+    }
+
+    for (const [folder, names] of Object.entries(componentGroups).sort()) {
+      const importNames = names.join(', ');
+      newImports.push(
+        `import { ${importNames} } from '../../components/pdfx/${folder}/pdfx-${folder}';`
+      );
+    }
+
+    result = result.replace(
+      /import\s+(?:type\s+)?\{[^}]+\}\s+from\s+'@pdfx\/components';?\n?/,
+      `${newImports.join('\n')}\n`
+    );
+  }
+
+  return result;
+}
+
+/**
+ * Builds a block registry item from real source .tsx/.ts files.
+ *
+ * Block source files use workspace imports (@pdfx/components, @pdfx/shared) that
+ * resolve in the monorepo. transformBlockForRegistry rewrites those to
+ * consumer-relative paths before packaging into public/r/blocks/*.json.
+ */
+async function processBlockItem(
+  item: SourceRegistryItem,
+  registryBaseDir: string,
+  outputDir: string
+): Promise<void> {
+  console.log(`Processing block ${item.name}...`);
+
+  const files = await Promise.all(
+    item.files.map(async (file) => {
+      const filePath = path.resolve(registryBaseDir, file.path);
+
+      if (!(await fileExistsAsync(filePath))) {
+        throw new Error(`Missing block source file: ${file.path}`);
+      }
+
+      const rawContent = await fs.readFile(filePath, 'utf-8');
+      const fileName = path.basename(file.path);
+
+      // Only transform .tsx files — .types.ts files have no workspace imports
+      const content = fileName.endsWith('.tsx')
+        ? transformBlockForRegistry(rawContent)
+        : rawContent;
+
+      return {
+        path: `templates/pdfx/${item.name}/${fileName}`,
+        content,
+        type: 'registry:file' as const,
+      };
+    })
+  );
+
+  const output: Record<string, unknown> = {
+    $schema: 'https://pdfx.akashpise.dev/schema/registry-item.json',
+    name: item.name,
+    type: item.type,
+    title: item.title,
+    description: item.description,
+    files,
+    dependencies: item.dependencies ?? [],
+  };
+
+  if (item.devDependencies && item.devDependencies.length > 0) {
+    output.devDependencies = item.devDependencies;
+  }
+
+  if (item.peerComponents && item.peerComponents.length > 0) {
+    output.peerComponents = item.peerComponents;
+  }
+
+  const blockOutputDir = path.join(outputDir, 'blocks');
+  await fs.mkdir(blockOutputDir, { recursive: true });
+
+  const outputPath = path.join(blockOutputDir, `${item.name}.json`);
+  await fs.writeFile(outputPath, `${JSON.stringify(output, null, 2)}\n`);
+
+  console.log(`  ${item.name}.json (block)`);
 }
 
 async function buildRegistry() {
@@ -288,47 +463,40 @@ async function buildRegistry() {
   const outputDir = path.join(__dirname, '../../public/r');
   await fs.mkdir(outputDir, { recursive: true });
 
-  // Use registry dir as base for relative paths. Source files may reference
-  // workspace packages (e.g., ../../../../packages/ui/src/heading.tsx), so we
-  // resolve relative paths from the registry dir to get absolute paths.
+  // Use registry dir as base for relative paths to resolve source files
+  // (e.g., src/registry/components/badge/badge.tsx) to absolute paths.
   const registryBaseDir = path.dirname(registryPath);
 
-  // Separate pre-built items (template + block = pre-built JSON, just copy) from component items (source → transform)
-  const componentItems = registry.items.filter(
-    (item) => item.type !== 'registry:template' && item.type !== 'registry:block'
-  );
-  const prebuiltItems = registry.items.filter(
-    (item) => item.type === 'registry:template' || item.type === 'registry:block'
-  );
+  // Separate block items (source .tsx → generated JSON) from component items (source → transform)
+  const componentItems = registry.items.filter((item) => item.type !== 'registry:block');
+  const blockItems = registry.items.filter((item) => item.type === 'registry:block');
 
   // Process component items in parallel
-  const results = await Promise.allSettled(
+  const componentResults = await Promise.allSettled(
     componentItems.map((item) => processItem(item, registryBaseDir, outputDir))
   );
 
-  const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+  const componentFailures = componentResults.filter(
+    (r): r is PromiseRejectedResult => r.status === 'rejected'
+  );
 
-  if (failures.length > 0) {
-    const messages = failures.map((f) => String(f.reason)).join('\n  ');
+  if (componentFailures.length > 0) {
+    const messages = componentFailures.map((f) => String(f.reason)).join('\n  ');
     throw new Error(`Registry build had failures:\n  ${messages}`);
   }
 
-  // Template/block items are pre-built hand-crafted JSON files already living in
-  // public/r/templates/.  We just verify they exist and log them — no source
-  // transformation needed.
-  const appDir = path.join(__dirname, '../..');
-  const templateFailures: string[] = [];
-  for (const item of prebuiltItems) {
-    const templatePath = path.join(appDir, 'public', 'r', 'templates', `${item.name}.json`);
-    if (await fileExistsAsync(templatePath)) {
-      console.log(`  ${item.name}.json (${item.type.replace('registry:', '')}, pre-built)`);
-    } else {
-      templateFailures.push(`Missing pre-built file: public/r/templates/${item.name}.json`);
-    }
-  }
+  // Process block items from source .tsx/.ts files — generates public/r/blocks/*.json
+  const blockResults = await Promise.allSettled(
+    blockItems.map((item) => processBlockItem(item, registryBaseDir, outputDir))
+  );
 
-  if (templateFailures.length > 0) {
-    throw new Error(`Registry build had failures:\n  ${templateFailures.join('\n  ')}`);
+  const blockFailures = blockResults.filter(
+    (r): r is PromiseRejectedResult => r.status === 'rejected'
+  );
+
+  if (blockFailures.length > 0) {
+    const messages = blockFailures.map((f) => String(f.reason)).join('\n  ');
+    throw new Error(`Registry build had failures:\n  ${messages}`);
   }
 
   const indexOutputPath = path.join(outputDir, 'index.json');
@@ -338,8 +506,11 @@ async function buildRegistry() {
   console.log(`\nRegistry built successfully! Output: ${outputDir}\n`);
 }
 
-buildRegistry().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error('Registry build failed:', message);
-  process.exit(1);
-});
+// Only run when executed directly (not when imported by tests)
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  buildRegistry().catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('Registry build failed:', message);
+    process.exit(1);
+  });
+}

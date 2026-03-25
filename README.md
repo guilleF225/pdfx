@@ -1,12 +1,12 @@
 # PDFx
 
-![Alpha](https://img.shields.io/badge/status-alpha-orange?style=flat-square)
+![Beta](https://img.shields.io/badge/status-beta-blue?style=flat-square)
 ![npm](https://img.shields.io/npm/v/@akii09/pdfx-cli?style=flat-square&label=cli)
 ![Downloads](https://img.shields.io/npm/dm/@akii09/pdfx-cli?style=flat-square)
 
 **Beautiful PDF components for React. Copy-paste. No lock-in.**
 
-Built on [@react-pdf/renderer](https://react-pdf.org/) and inspired by [shadcn/ui](https://ui.shadcn.com/) — PDFx gives you pre-built, themeable document components and a CLI to add them directly into your codebase.
+Built on [@react-pdf/renderer](https://react-pdf.org/) and inspired by [shadcn/components](https://components.shadcn.com/) — PDFx gives you pre-built, themeable document components and a CLI to add them directly into your codebase.
 
 ---
 
@@ -23,9 +23,13 @@ Built on [@react-pdf/renderer](https://react-pdf.org/) and inspired by [shadcn/u
 
 ## Prerequisites
 
+**To use PDFx (consumers):**
+- Node.js ≥ 20.0.0
+- A React project with `@react-pdf/renderer` installed
+
+**To develop PDFx (contributors):**
 - Node.js ≥ 24.0.0
 - pnpm ≥ 10.0.0
-- A React project with `@react-pdf/renderer` installed
 
 ## Quick Start
 
@@ -92,20 +96,28 @@ Run `npx @akii09/pdfx-cli list` to see all components with install status.
 ```
 pdfx/
 ├── apps/
-│   ├── www/          # Documentation site
-│   └── playground/   # Component playground
+│   └── www/                    # Documentation site + component registry
+│       └── src/registry/
+│           ├── components/     # Component source (copy-paste target)
+│           ├── blocks/         # Block templates
+│           └── index.json      # Registry manifest
 ├── packages/
-│   ├── ui/           # PDF components
-│   ├── shared/       # Types, schemas, theme system
+│   ├── shared/       # Types, schemas, theme system (used by CLI + www)
 │   └── cli/          # pdfx CLI
 └── turbo.json
 ```
+
+Components live in `apps/www/src/registry/components/` — the same directory the registry serves from. No separate private package. This is the true shadcn/components model: the website and the registry are the same thing.
 
 ## Contributing
 
 Contributions are welcome — bug fixes, new components, docs improvements, or ideas.
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) to get started.
+
+## Releases
+
+See [Releases](https://github.com/akii09/pdfx/releases) for changelogs and version history.
 
 ## License
 

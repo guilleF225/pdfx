@@ -1,7 +1,5 @@
 import { z } from 'zod';
 
-// ─── Theme Schemas ──────────────────────────────────────────────────────────
-
 /** Schema for semantic color tokens */
 export const colorTokensSchema = z.object({
   foreground: z.string().min(1),
@@ -102,17 +100,12 @@ export const themeSchema = z.object({
   page: pageTokensSchema,
 });
 
-// ─── Config & Registry Schemas ──────────────────────────────────────────────
-
 /** Schema for pdfx.json config file */
 export const configSchema = z.object({
   $schema: z.string().optional(),
   componentDir: z.string().min(1, 'componentDir must not be empty'),
   registry: z.string().url('registry must be a valid URL'),
   theme: z.string().min(1).optional(),
-  /** Directory where templates are installed. Defaults to ./src/templates/pdfx */
-  templateDir: z.string().min(1).optional(),
-  /** Directory where blocks are installed. Defaults to ./src/blocks/pdfx */
   blockDir: z.string().min(1).optional(),
 });
 
@@ -123,6 +116,7 @@ export const registryFileTypes = [
   'registry:style',
   'registry:template',
   'registry:block',
+  'registry:file',
 ] as const;
 
 /** Schema for a single file in a registry item */
@@ -140,8 +134,8 @@ export const registryItemSchema = z.object({
   description: z.string().optional(),
   files: z.array(registryFileSchema).min(1, 'Component must have at least one file'),
   dependencies: z.array(z.string()).optional(),
+  devDependencies: z.array(z.string()).optional(),
   registryDependencies: z.array(z.string()).optional(),
-  /** For templates: peerDependencies are @pdfx/ui components that must be available */
   peerComponents: z.array(z.string()).optional(),
 });
 
@@ -158,6 +152,7 @@ export const registryIndexItemSchema = z.object({
     })
   ),
   dependencies: z.array(z.string()).optional(),
+  devDependencies: z.array(z.string()).optional(),
   registryDependencies: z.array(z.string()).optional(),
   peerComponents: z.array(z.string()).optional(),
 });

@@ -1,17 +1,18 @@
 import { type PdfxTheme, minimalTheme, modernTheme, professionalTheme } from '@pdfx/shared';
+import { track } from '@vercel/analytics';
 import { Check, ChevronRight, Code2, Eye, FileText, Layers, Terminal } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
-// ── Template registry files ──────────────────────────────────────────────────
-import invoice01Registry from '../../../../public/r/templates/invoice-classic.json';
-import invoice06Registry from '../../../../public/r/templates/invoice-consultant.json';
-import invoice04Registry from '../../../../public/r/templates/invoice-corporate.json';
-import invoice05Registry from '../../../../public/r/templates/invoice-creative.json';
-import invoice03Registry from '../../../../public/r/templates/invoice-minimal.json';
-import invoice02Registry from '../../../../public/r/templates/invoice-modern.json';
+// Blocks registry files
+import invoice01Registry from '../../../../public/r/blocks/invoice-classic.json';
+import invoice06Registry from '../../../../public/r/blocks/invoice-consultant.json';
+import invoice04Registry from '../../../../public/r/blocks/invoice-corporate.json';
+import invoice05Registry from '../../../../public/r/blocks/invoice-creative.json';
+import invoice03Registry from '../../../../public/r/blocks/invoice-minimal.json';
+import invoice02Registry from '../../../../public/r/blocks/invoice-modern.json';
 
-// ── Component registry files ─────────────────────────────────────────────────
+// Component registry files
 import keyValueRegistry from '../../../../public/r/key-value.json';
 import pageFooterRegistry from '../../../../public/r/page-footer.json';
 import pageHeaderRegistry from '../../../../public/r/page-header.json';
@@ -45,7 +46,7 @@ type TemplateId =
 type ThemePreset = 'professional' | 'modern' | 'minimal';
 type ViewMode = 'preview' | 'code';
 
-// ── Component file map ───────────────────────────────────────────────────────
+// Component file map
 const INVOICE_COMPONENT_FILES: TemplateCodeFile[] = [
   keyValueRegistry,
   pageFooterRegistry,
@@ -331,7 +332,10 @@ export default function InvoicesContainerPage() {
           <h1 className="text-2xl font-bold tracking-tight text-foreground mb-1">Invoice Blocks</h1>
           <p className="text-sm text-muted-foreground leading-relaxed">
             Ready-to-use PDF invoice layouts built with{' '}
-            <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">@pdfx/ui</code>.
+            <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">
+              @pdfx/components
+            </code>
+            .
           </p>
         </div>
         <div className="shrink-0 flex items-center gap-1.5 bg-muted/60 rounded-lg px-3 py-2 border border-border text-xs font-mono text-muted-foreground">
@@ -340,6 +344,7 @@ export default function InvoicesContainerPage() {
           <CopyButton
             value={installCmd}
             className="ml-1 text-muted-foreground hover:text-foreground hover:bg-muted rounded p-1 transition-colors"
+            onCopy={(cmd) => track('block_install_copied', { block: current.id, cmd })}
           />
         </div>
       </div>
