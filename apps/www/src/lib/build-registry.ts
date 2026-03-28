@@ -6,7 +6,6 @@ import { type Registry, registryItemSchema, registrySchema } from '@pdfx/shared'
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Input types: what we read from registry/index.json (no content yet)
 interface SourceRegistryFile {
   path: string;
   type: string;
@@ -58,10 +57,10 @@ export function transformForRegistry(content: string): { content: string; usesTh
   let result = content;
   const usesTheme = result.includes('pdfx-theme');
 
-  // ── 1. Remove @pdfx/shared type-only imports ──────────────────────────────
+  // 1. Remove @pdfx/shared type-only imports
   result = result.replace(/import\s+type\s+\{[^}]*\}\s+from\s+['"]@pdfx\/shared['"];?\n?/g, '');
 
-  // ── 2. Inline PDFComponentProps for .types.ts files ───────────────────────
+  // 2. Inline PDFComponentProps for .types.ts files
   if (result.includes('PDFComponentProps')) {
     // `(?:<[^{]*>)?` captures optional generic params (e.g. `<T = Record<string,unknown>>`),
     // stopping at `{` so we never accidentally consume the interface body.
@@ -102,7 +101,7 @@ export function transformForRegistry(content: string): { content: string; usesTh
     }
   }
 
-  // ── 3. PdfxTheme alias ────────────────────────────────────────────────────
+  // 3. PdfxTheme alias
   // Use a whole-word check so that 'usePdfxTheme' (which contains 'PdfxTheme'
   // as a substring) does NOT trigger injection in .tsx files.
   if (/(?<![a-zA-Z_$])PdfxTheme(?![a-zA-Z_$\d])/.test(result)) {
@@ -122,7 +121,7 @@ export function transformForRegistry(content: string): { content: string; usesTh
     }
   }
 
-  // ── 4. Normalize theme / context import paths ─────────────────────────────
+  // 4. Normalize theme / context import paths
   // ../../lib/pdfx-theme  or  ./lib/pdfx-theme  →  ../lib/pdfx-theme
   result = result.replace(
     /from\s+['"](?:\.\.\/\.\.\/|\.\/?)lib\/pdfx-theme['"]/g,
@@ -134,24 +133,24 @@ export function transformForRegistry(content: string): { content: string; usesTh
     "from '../lib/pdfx-theme-context'"
   );
 
-  // ── 5. Rewrite intra-component companion file imports ─────────────────────
+  // 5. Rewrite intra-component companion file imports
   // ./X.styles  →  ./pdfx-X.styles   (component imports its styles file)
   result = result.replace(/from\s+['"]\.\/([^'"]+)\.styles['"]/g, "from './pdfx-$1.styles'");
   // ./X.types  →  ./pdfx-X.types   (component imports its types file)
   result = result.replace(/from\s+['"]\.\/([^'"]+)\.types['"]/g, "from './pdfx-$1.types'");
 
-  // ── 6. Rewrite cross-component type imports ───────────────────────────────
+  // 6. Rewrite cross-component type imports
   // ../foo/foo.types  →  ../foo/pdfx-foo.types  (e.g. data-table.types imports TableVariant)
   result = result.replace(
     /from\s+['"]\.\.\/([^/'"]+)\/\1\.types['"]/g,
     "from '../$1/pdfx-$1.types'"
   );
 
-  // ── 7. data-table: rewrite table component import ─────────────────────────
+  // 7. data-table: rewrite table component import
   // ../table  or  ./table  →  ../table/pdfx-table
   result = result.replace(/from\s+['"](?:\.\.\/|\.\/)table['"]/g, "from '../table/pdfx-table'");
 
-  // ── 8. Inline resolveColor ────────────────────────────────────────────────
+  // 8. Inline resolveColor
   const resolveColorInline = `const THEME_COLOR_KEYS = ['foreground','muted','mutedForeground','primary','primaryForeground','accent','destructive','success','warning','info'] as const;
 function resolveColor(value: string, colors: Record<string, string>): string {
   return THEME_COLOR_KEYS.includes(value as (typeof THEME_COLOR_KEYS)[number]) ? colors[value] : value;
@@ -252,11 +251,15 @@ async function processItem(
 }
 
 /**
- * Maps @pdfx/components exported names to their consumer component file paths.
- * Key: export name, Value: component folder name (used to build the pdfx- prefixed path).
+ * Maps @pdfx/components exported names (or friendly aliases) to their consumer
+ * component folder names (used to build the pdfx-<folder> install path).
+ *
+ * Both canonical names AND common aliases are listed so that block source files
+ * work regardless of which name they import. Aliases are remapped to canonical
+ * export names at emit time via CANONICAL_EXPORT_BY_FOLDER below.
  */
 const PDFX_UI_COMPONENT_MAP: Record<string, string> = {
-  // Components
+  // Canonical component names (match actual export names in installed files)
   Badge: 'badge',
   Card: 'card',
   DataTable: 'data-table',
@@ -271,24 +274,55 @@ const PDFX_UI_COMPONENT_MAP: Record<string, string> = {
   PdfList: 'list',
   PdfPageNumber: 'page-number',
   PdfQRCode: 'qrcode',
+  PdfSignatureBlock: 'signature',
   PdfWatermark: 'watermark',
   PageBreak: 'page-break',
   PageFooter: 'page-footer',
   PageHeader: 'page-header',
   Section: 'section',
-  Signature: 'signature',
   Stack: 'stack',
   Table: 'table',
   TableBody: 'table',
   TableCell: 'table',
+  TableFooter: 'table',
   TableHeader: 'table',
   TableRow: 'table',
   Text: 'text',
+  // Friendly aliases — block sources or AI-generated code may use these shorter names.
+  // They resolve to the same folder and are remapped to canonical names at emit time.
+  Alert: 'alert',
+  Graph: 'graph',
+  List: 'list',
+  PageNumber: 'page-number',
+  QRCode: 'qrcode',
+  QrCode: 'qrcode',
+  Signature: 'signature',
+  Watermark: 'watermark',
   // Theme context
   PdfxThemeContext: 'theme-context',
   PdfxThemeProvider: 'theme-context',
   usePdfxTheme: 'theme-context',
   useSafeMemo: 'theme-context',
+};
+
+/**
+ * Canonical export name for each component folder.
+ *
+ * Only needed for folders where the real export name doesn't match the alias
+ * that might appear in block source files (e.g. a block might import `Signature`
+ * but the installed file exports `PdfSignatureBlock`).
+ *
+ * Key: folder name (value in PDFX_UI_COMPONENT_MAP)
+ * Value: the exact name exported by that component's file
+ */
+const CANONICAL_EXPORT_BY_FOLDER: Record<string, string> = {
+  alert: 'PdfAlert',
+  graph: 'PdfGraph',
+  list: 'PdfList',
+  'page-number': 'PdfPageNumber',
+  qrcode: 'PdfQRCode',
+  signature: 'PdfSignatureBlock',
+  watermark: 'PdfWatermark',
 };
 
 /**
@@ -309,13 +343,13 @@ const PDFX_UI_COMPONENT_MAP: Record<string, string> = {
 export function transformBlockForRegistry(content: string): string {
   let result = content;
 
-  // ── 1. @pdfx/shared → ../../lib/pdfx-theme ───────────────────────────────
+  // 1. @pdfx/shared → ../../lib/pdfx-theme
   result = result.replace(
     /import\s+type\s+\{([^}]+)\}\s+from\s+'@pdfx\/shared';?/g,
     "import type {$1} from '../../lib/pdfx-theme';"
   );
 
-  // ── 2. @pdfx/components → per-component consumer paths ───────────────────────────
+  // 2. @pdfx/components → per-component consumer paths
   const uiImportMatch = result.match(
     /import\s+(?:type\s+)?\{([^}]+)\}\s+from\s+'@pdfx\/components';?/
   );
@@ -354,9 +388,14 @@ export function transformBlockForRegistry(content: string): string {
     }
 
     for (const [folder, names] of Object.entries(componentGroups).sort()) {
-      const importNames = names.join(', ');
+      // Remap any alias names to their canonical export name, then deduplicate.
+      // Example: both 'Signature' and 'PdfSignatureBlock' in the same import get
+      // collapsed into a single 'PdfSignatureBlock' import.
+      const canonicalNames = [
+        ...new Set(names.map((n) => CANONICAL_EXPORT_BY_FOLDER[folder] ?? n)),
+      ];
       newImports.push(
-        `import { ${importNames} } from '../../components/pdfx/${folder}/pdfx-${folder}';`
+        `import { ${canonicalNames.join(', ')} } from '../../components/pdfx/${folder}/pdfx-${folder}';`
       );
     }
 
